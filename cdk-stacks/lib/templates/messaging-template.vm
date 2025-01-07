@@ -1,0 +1,57 @@
+#set($jsonTool='')
+{
+    #if( $!{context.accountId} )
+        "accountId": "$!{context.accountId}",
+    #else
+        "accountId": "$!jsonTool.fetchAccountId($!{eventType})",
+    #end
+    #if( $!{context.organizationId} )
+        "organizationId": "$!{context.organizationId}",
+    #else
+        "organizationId": "",
+    #end
+    "sendingId": "$!{originationPhoneNumber}",
+    "sendingAddress": "$!{originationPhoneNumber}",
+    "destinationAddress": ["$!{destinationPhoneNumber}"],
+    "channel": "$!jsonTool.determineChannel($!{eventType})",
+    "type": "$!{messageType}", 
+    "status": "$!{eventType}",
+    "statusCode": "$!{messageStatus}",
+    "statusMessage": "$!{messageStatusDescription}",
+    "rawStatus": "",
+    "timestamp": $!jsonTool.convertTime($!{eventTimestamp}),
+    "messageId": "$!{messageId}",
+    #if( $!{context}    )
+        "tags": $!jsonTool.toJson($!{context}),
+    #else
+        "tags": {},
+    #end
+    "channelData": {
+        #if( $!{isoCountryCode} )
+            "isoCountryCode": "$!{isoCountryCode}",
+        #end
+        #if( $!{totalMessageParts} )
+            "totalMessageParts": "$!{totalMessageParts}",
+        #end
+        #if( $!{totalMessagePrice} )
+            "totalMessagePrice": "$!{totalMessagePrice}",
+        #end
+        #if( $!{totalCarrierFee} )
+            "totalCarrierFee": "$!{totalCarrierFee}",
+        #end
+        #if( $!{callDurationInSeconds} )
+            "callDurationInSeconds": "$!{callDurationInSeconds}",
+        #end
+        #if( $!{totalDurationInMinutes} )
+            "totalDurationInMinutes": "$!{totalDurationInMinutes}",
+        #end
+        #if( $!{mcc} )
+            "mcc": "$!{mcc}",
+        #end
+        #if( $!{mnc} )
+            "mnc": "$!{mnc}",
+        #end
+    },
+    "rawEvent": "$!jsonTool.toEscapedJson($!{originalEvent})"
+}
+#end

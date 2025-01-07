@@ -1,0 +1,29 @@
+#set($jsonTool='')
+{
+    "accountId": "$!{aws_account_id}",
+    "organizationId": "$!{context.MetaWabaIds[0].wabaId}",
+    "sendingId": "$!{context.MetaPhoneNumberIds[0].metaPhoneNumberId}",
+    "sendingAddress": "$!{parsedWhatsAppWebhookEntry.changes[0].value.metadata.display_phone_number}",
+    "destinationAddress": ["$!jsonTool.formatPhoneNumber($!{parsedWhatsAppWebhookEntry.changes[0].value.messages[0].from})"],
+    "channel": "whatsapp",
+    #if( $!{parsedWhatsAppWebhookEntry.changes[0].value.messages[0].type} )
+        "type": "message", 
+        "status": "$!{parsedWhatsAppWebhookEntry.changes[0].value.messages[0].type}",
+        "statusCode": "",
+        "statusMessage": "",
+        "rawStatus": "$!jsonTool.toEscapedJson($!{parsedWhatsAppWebhookEntry.changes[0].value.messages[0]})",
+    #else
+        "type": "Unknown", 
+        "status": "",
+        "statusMessage": "",
+        "rawStatus": "",
+        "statusCode": "",
+    #end
+    "isoCountryCode": "",
+    "timestamp": $!jsonTool.convertTime($!{message_timestamp}),
+    "messageId": "$!{parsedWhatsAppWebhookEntry.changes[0].value.messages[0].id}",
+    "tags": {},
+    "channelData": {},
+    "rawEvent": "$!jsonTool.toEscapedJson($!{parsedWhatsAppWebhookEntry})"
+}
+#end

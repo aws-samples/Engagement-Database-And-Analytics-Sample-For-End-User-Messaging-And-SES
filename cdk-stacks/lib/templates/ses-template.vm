@@ -1,0 +1,83 @@
+#set($jsonTool='')
+{
+    "accountId": "$!{mail.sendingAccountId}",
+    #if( $!{mail.tags.organizationId} )
+        "organizationId": "$!{mail.tags.organizationId[0]}",
+    #else
+        "organizationId": "",
+    #end
+    "sendingId": "$!{mail.sourceArn}",
+    "sendingAddress": "$!{mail.source}",
+    "destinationAddress": $!jsonTool.toJson($!{mail.destination}),
+    "channel": "email",
+    "type": "$!{eventType}", 
+    #if( $!{eventType} == "Bounce" )
+        "status": "$!{eventType}",
+        "statusCode": "$!{bounce.bounceType}",
+        "statusMessage": "$!{bounce.bounceSubType}",
+        "rawStatus": "$!jsonTool.toEscapedJson($!{bounce})",
+    #elseif( $!{eventType} == "Complaint" )
+        "status": "$!{eventType}",
+        "statusCode": "$!{complaint.complaintFeedbackType}",
+        "statusMessage": "",
+        "rawStatus": "$!jsonTool.toEscapedJson($!{complaint})",
+    #elseif( $!{eventType} == "Delivery" )
+        "status": "$!{eventType}",
+        "statusCode": "$!{delivery.smtpResponse}",
+        "statusMessage": "$!{delivery.reportingMTA}",
+        "rawStatus": "$!jsonTool.toEscapedJson($!{delivery})",
+    #elseif( $!{eventType} == "Send" )
+        "status": "$!{eventType}",
+        "statusCode": "",
+        "statusMessage": "",
+        "rawStatus": "$!jsonTool.toEscapedJson($!{send})",
+    #elseif( $!{eventType} == "Reject" )
+        "status": "$!{eventType}",
+        "statusCode": "$!{reject.reason}",
+        "statusMessage": "",
+        "rawStatus": "$!jsonTool.toEscapedJson($!{reject})",
+    #elseif( $!{eventType} == "Open" )
+        "status": "$!{eventType}",
+        "statusCode": "$!{open.ipAddress}",
+        "statusMessage": "",
+        "rawStatus": "$!jsonTool.toEscapedJson($!{open})",
+    #elseif( $!{eventType} == "Click" )
+        "status": "$!{eventType}",
+        "statusCode": "$!{click.ipAddress}",
+        "statusMessage": "$!{click.link}",
+        "rawStatus": "$!jsonTool.toEscapedJson($!{click})",
+    #elseif( $!{eventType} == "Rendering Failure" )
+        "status": "$!{eventType}",
+        "statusCode": "$!{failure.template}",
+        "statusMessage": "$!{failure.errorMessage}",
+        "rawStatus": "$!jsonTool.toEscapedJson($!{failure})",
+    #elseif( $!{eventType} == "DeliveryDelay" )
+        "status": "$!{eventType}",
+        "statusCode": "$!{deliveryDelay.delayType}",
+        "statusMessage": "",
+        "rawStatus": "$!jsonTool.toEscapedJson($!{deliveryDelay})",
+    #elseif( $!{eventType} == "Subscription" )
+        "status": "$!{eventType}",
+        "statusCode": "$!{subscription.contactList}",
+        "statusMessage": "$!{subscription.source}",
+        "rawStatus": "$!jsonTool.toEscapedJson($!{subscription})",
+    #else
+        "status": "unknown",
+        "statusCode": "",
+        "statusMessage": "",
+        "rawStatus": "",
+    #end
+    "isoCountryCode": "",
+    "timestamp": $!jsonTool.convertTime($!{mail.timestamp}),
+    "messageId": "$!{mail.messageId}",
+    #if($!{mail.tags})
+        "tags": $!jsonTool.formatSESTags($!{mail.tags}),
+    #else
+        "tags": {},
+    #end
+    "channelData": {
+        "subject": "$!{mail.commonHeaders.subject}"
+    },
+    "rawEvent": "$!jsonTool.toEscapedJson($!{originalEvent})"
+}
+#end

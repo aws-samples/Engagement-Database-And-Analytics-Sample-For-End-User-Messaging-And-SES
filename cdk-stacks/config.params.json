@@ -1,0 +1,56 @@
+{
+    "CdkAppName": "EngagementDB",
+    "CdkBackendStack": "EngagementDBBackend",
+    "hierarchy": "/EngagementDB/",
+    "parameters": [
+        {
+            "name": "whatsappEnabled",
+            "cliFormat": "whatsapp-enabled",
+            "description": "Set to true to enable WhatsApp support",
+            "defaultValue": false,
+            "required": true,
+            "boolean": true
+        },
+        {
+            "name": "eumWhatsappSNSTopicArn",
+            "cliFormat": "eum-whatsapp-sns-topic-arn",
+            "description": "The ARN of the SNS Topic that was used when configuring your WhatsApp Business Account.",
+            "required": true,
+            "parent": "whatsappEnabled"
+        },
+        {
+            "name": "quicksightStackEnabled",
+            "cliFormat": "quicksight-stack-enabled",
+            "description": "Set to true to enable Quicksight support",
+            "defaultValue": false,
+            "required": true,
+            "boolean": true
+        },
+        {
+            "name": "athenaQueryStorageS3BucketName",
+            "cliFormat": "athena-query-storage-s3-bucket-name",
+            "description": "The S3 Bucket Name of where Athena should store query results.  You can use the same bucket as the one used for the Access Logs above which is `[CDK Output: AccessLogsBucketName]`. Query output will be encrypted using AWS Managed Keys",
+            "required": false,
+            "parent": "quicksightStackEnabled"
+        },
+        {
+            "name": "quicksightAdminUsername",
+            "cliFormat": "quicksight-admin-username",
+            "description": "The Quicksight Principal Username copied in step 4.  Should look like Admin/[Quicksight Username]",
+            "required": false,
+            "parent": "quicksightStackEnabled"
+        },
+        {
+            "name": "langOption",
+            "cliFormat": "lang-option",
+            "description": "The language of the dashboard template that will be used if exists. Current supported language [en, es]. Default uses 'en'",
+            "required": false,
+            "parent": "quicksightStackEnabled"
+        }
+    ],
+    "tags": {
+        "project": "Engagement Database starter project",
+        "os-code-source": "https://github.com/aws-samples/engagement-database"
+    }
+
+}

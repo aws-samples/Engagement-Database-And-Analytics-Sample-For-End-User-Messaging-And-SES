@@ -1,0 +1,22 @@
+{
+  "name": "lambdas",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {},
+  "author": "davelem",
+  "license": "MIT-0",
+  "devDependencies": {
+    "esbuild": "^0.19.2"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.529.0",
+    "@types/aws-lambda": "^8.10.119",
+    "cfn-custom-resource": "^5.0.16",
+    "json5": "^2.2.3",
+    "velocityjs": "^2.0.6"
+  }
+}

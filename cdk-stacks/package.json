@@ -1,0 +1,42 @@
+{
+  "name": "EngagementDB",
+  "version": "0.0.1",
+  "description": "Engagement Database",
+  "main": "configure.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "cdk": "cdk",
+    "configure": "node configure.js -il",
+    "configure:test": "node configure.js -ilt",
+    "install:cdk-stacks": "npm install",
+    "install:lambda-layer": "cd lambda-layer/nodejs && npm install",
+    "install:lambdas": "cd lib/lambdas/handlers/node && npm install",
+    "install:all": "npm run install:cdk-stacks && npm run install:lambdas",
+    "cdk:remove:context": "rm -f cdk.context.json",
+    "cdk:deploy:base": "npm run cdk:remove:context && cdk deploy EngagementDBBackend --exclusively --disable-rollback -c application_version=$npm_package_version",
+    "cdk:deploy:quicksight": "npm run cdk:remove:context && cdk deploy QuicksightStack --exclusively --disable-rollback -c application_version=$npm_package_version",
+    "cdk:deploy:gitbash:base": "npm run cdk:remove:context && winpty cdk.cmd deploy EngagementDBBackend --exclusively  --disable-rollback -c application_version=$npm_package_version",
+    "cdk:deploy:gitbash:quicksight": "npm run cdk:remove:context && winpty cdk.cmd deploy QuicksightStack --exclusively --disable-rollback -c application_version=$npm_package_version",
+    "cdk:synth": "cdk synth -c application_version=$npm_package_version"
+  },
+  "author": "cds-builder-team",
+  "license": "MIT-0",
+  "devDependencies": {
+    "@types/node": "^18.7.16",
+    "aws-cdk": "^2.165.0",
+    "cdk-nag": "^2.27.108",
+    "constructs": "^10.2.69",
+    "esbuild": "^0.19.2",
+    "jest": "^29.6.3",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.1.6"
+  },
+  "dependencies": {
+    "@aws-cdk/aws-glue-alpha": "^2.165.0-alpha.0",
+    "@aws-sdk/client-ssm": "^3.395.0",
+    "aws-cdk-lib": "^2.170.0",
+    "source-map-support": "^0.5.21"
+  }
+}

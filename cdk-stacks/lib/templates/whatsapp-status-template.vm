@@ -1,0 +1,43 @@
+#set($jsonTool='')
+{
+    "accountId": "$!{aws_account_id}",
+    "organizationId": "$!{context.MetaWabaIds[0].wabaId}",
+    "sendingId": "$!{context.MetaPhoneNumberIds[0].metaPhoneNumberId}",
+    "sendingAddress": "$!{parsedWhatsAppWebhookEntry.changes[0].value.metadata.display_phone_number}",
+    "destinationAddress": ["$!jsonTool.formatPhoneNumber($!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0].recipient_id})"],
+    "channel": "whatsapp",
+    #if( $!{parsedWhatsAppWebhookEntry.changes[0].value.statuses} )
+        "type": "messageStatus",
+        "status": "$!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0].status}",
+        #if( $!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0].errors} )
+            "statusCode": "$!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0].errors[0].code}",
+            "statusMessage": "$!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0].errors[0].message}",
+        #else
+            "statusCode": "",
+            "statusMessage": "",
+        #end
+        "rawStatus": "$!jsonTool.toEscapedJson($!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0]})",
+    #else
+        "type": "Unknown", 
+        "status": "",
+        "statusCode": "",
+        "statusMessage": "",
+        "rawStatus": "",
+    #end
+    "isoCountryCode": "",
+    "timestamp": $!jsonTool.convertTime($!{message_timestamp}),
+    "messageId": "$!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0].id}",
+    "tags": {},
+    "channelData": {
+        #if( $!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0].conversation} )
+            "conversationId": "$!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0].conversation.id}",
+            "conversationExpiration": "$!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0].conversation.expiration_timestamp}",
+            "conversationType": "$!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0].conversation.origin.type}",
+        #end
+        #if( $!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0].biz_opaque_callback_data} )
+            "bizOpaqueCallbackData": "$!{parsedWhatsAppWebhookEntry.changes[0].value.statuses[0].biz_opaque_callback_data}",
+        #end
+    },
+    "rawEvent": "$!jsonTool.toEscapedJson($!{parsedWhatsAppWebhookEntry})"
+}
+#end
