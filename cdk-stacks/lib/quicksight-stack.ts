@@ -66,7 +66,7 @@ export class QuicksightStack extends Stack {
               }),
               new iam.PolicyStatement({
                 effect: iam.Effect.ALLOW,
-                actions: ['glue:GetTable','glue:CreateTable', `glue:GetDatabases`],
+                actions: ['glue:GetTable','glue:CreateTable', `glue:GetDatabases`,'glue:UpdateTable'],
                 resources: [
                     'arn:aws:glue:'+this.region+':'+this.account+':catalog',
                     'arn:aws:glue:'+this.region+':'+this.account+':database/'+athenaDatabase.toLowerCase(),
@@ -89,6 +89,7 @@ export class QuicksightStack extends Stack {
                   "quicksight:DescribeDataSourcePermissions",
                   "quicksight:DescribeDataSet",
                   "quicksight:CreateDataSet",
+                  "quicksight:UpdateDataSet",
                   "quicksight:DeleteDataSet",
                   "quicksight:PassDataSet",
                   "quicksight:DescribeDataSetPermissions",
@@ -106,7 +107,11 @@ export class QuicksightStack extends Stack {
                   "quicksight:DescribeDashboardPermissions",
                   "quicksight:UpdateDashboardPermissions",
                   "quicksight:CreateRefreshSchedule",
+                  "quicksight:UpdateRefreshSchedule",
+                  "quicksight:DescribeRefreshSchedule",
+                  "quicksight:DeleteRefreshSchedule",
                   "quicksight:DescribeDataSetRefreshProperties",
+                  "quicksight:PutDataSetRefreshProperties",
                   "quicksight:UpdateDashboardPublishedVersion"
                 ],
                 resources: [

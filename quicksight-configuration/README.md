@@ -3,6 +3,8 @@
 ## New QuickSight Setup
 > NOTE: The following will configure a new QuickSight account that will incur additional charges.  The following will also grant access for QuickSight to access data stored in Amazon S3.  **Please consult with your AWS Admins and Information Security departments if you don't have a full understanding of the choices below.**
 
+> **IMPORTANT:** This solution requires a QuickSight Enterprise edition account.  If you are using a Standard QuickSight account, you will need to [upgrade to the Enterprise edition](https://docs.aws.amazon.com/quicksight/latest/user/upgrading-subscription.html) before you can deploy the Engagement Database.
+
 1. Navigate to QuickSight in the Console:
 ![Search for QuickSight in Console](qs0.png)
 

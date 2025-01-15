@@ -10,190 +10,350 @@ import crypto from 'crypto';
 
 //To create additional views, add them to this array.
 const views = [
-  `CREATE OR REPLACE VIEW "engagementdb-glue-db"."whatsapp_message_status" AS 
-  SELECT
-    messageid
-  , sendingaddress sending_address
-  , destinationaddress[1] destination_address
-  , MAX((CASE WHEN (status = 'sent') THEN from_unixtime((timestamp / 1000)) ELSE null END)) message_timestamp
-  , MAX((CASE WHEN (status = 'accepted') THEN from_unixtime((timestamp / 1000)) ELSE null END)) accepted_timestamp
-  , MAX((CASE WHEN (status = 'sent') THEN from_unixtime((timestamp / 1000)) ELSE null END)) sent_timestamp
-  , MAX((CASE WHEN (status = 'delivered') THEN from_unixtime((timestamp / 1000)) ELSE null END)) delivered_timestamp
-  , MAX((CASE WHEN (status = 'read') THEN from_unixtime((timestamp / 1000)) ELSE null END)) read_timestamp
-  , MAX((CASE WHEN (status = 'failed') THEN from_unixtime((timestamp / 1000)) ELSE null END)) failed_timestamp
-  , COALESCE(MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].biz_opaque_callback_data')), null) biz_opaque
-  , COALESCE(MAX(statuscode), null) status_code
-  , COALESCE(MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.id')), null) conversation_id
-  , COALESCE(MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.origin.type')), null) origin_type
-  FROM
+`CREATE OR REPLACE VIEW "email_message_status" AS 
+SELECT
+  messageid
+, sendingaddress
+, destinationaddress[1] destinationaddress
+, MIN(ingest_timestamp) ingest_timestamp
+, FROM_UNIXTIME((MIN(timestamp) / 1000)) message_timestamp
+, MAX((CASE WHEN (type = 'Send') THEN from_unixtime((timestamp / 1000)) ELSE null END)) send_timestamp
+, MAX((CASE WHEN (type = 'Bounce') THEN from_unixtime((timestamp / 1000)) ELSE null END)) bounce_timestamp
+, MAX((CASE WHEN (type = 'Complaint') THEN from_unixtime((timestamp / 1000)) ELSE null END)) complaint_timestamp
+, MAX((CASE WHEN (type = 'Delivery') THEN from_unixtime((timestamp / 1000)) ELSE null END)) delivery_timestamp
+, MAX((CASE WHEN (type = 'Reject') THEN from_unixtime((timestamp / 1000)) ELSE null END)) reject_timestamp
+, MAX((CASE WHEN (type = 'Open') THEN from_unixtime((timestamp / 1000)) ELSE null END)) last_open_timestamp
+, SUM((CASE WHEN (type = 'Open') THEN 1 ELSE 0 END)) open_count
+, MAX((CASE WHEN (type = 'Click') THEN from_unixtime((timestamp / 1000)) ELSE null END)) last_click_timestamp
+, SUM((CASE WHEN (type = 'Click') THEN 1 ELSE 0 END)) click_count
+, COALESCE(MAX((CASE WHEN (type = 'Click') THEN json_extract_scalar(rawevent, '$.click.link') END)), null) last_clicked_link
+, MAX((CASE WHEN (type = 'Rendering Failure') THEN from_unixtime((timestamp / 1000)) ELSE null END)) rendering_failure_timestamp
+, MAX((CASE WHEN (type = 'DeliveryDelay') THEN from_unixtime((timestamp / 1000)) ELSE null END)) delivery_delay_timestamp
+, MAX((CASE WHEN (type = 'Subscription') THEN from_unixtime((timestamp / 1000)) ELSE null END)) subscription_timestamp
+, MAX(json_extract_scalar(rawevent, '$.bounce.bounceType')) bouncetype
+, MAX(json_extract_scalar(rawevent, '$.bounce.bounceSubType')) bounceSubType
+, MAX(json_extract_scalar(rawevent, '$.complaint.complaintFeedbackType')) complaintFeedbackType
+, (CASE WHEN (MAX((CASE WHEN (type = 'Bounce') THEN timestamp ELSE null END)) IS NOT NULL) THEN 'Bounce' WHEN (MAX((CASE WHEN (type = 'Complaint') THEN timestamp ELSE null END)) IS NOT NULL) THEN 'Complaint' WHEN (MAX((CASE WHEN (type = 'Delivery') THEN timestamp ELSE null END)) IS NOT NULL) THEN 'Delivery' WHEN (MAX((CASE WHEN (type = 'Reject') THEN timestamp ELSE null END)) IS NOT NULL) THEN 'Reject' WHEN (MAX((CASE WHEN (type = 'Send') THEN timestamp ELSE null END)) IS NOT NULL) THEN 'Send' ELSE null END) last_status
+, (CASE WHEN (REGEXP_EXTRACT(destinationaddress[1], '@([a-zA-Z0-9.-]+)$') = 'gmail.com') THEN 'gmail' WHEN (REGEXP_EXTRACT(destinationaddress[1], '@([a-zA-Z0-9.-]+)$') = 'yahoo.com') THEN 'yahoo' ELSE REGEXP_EXTRACT(destinationaddress[1], '@([a-zA-Z0-9.-]+)$', 1) END) isp
+, (CASE WHEN (REGEXP_EXTRACT(sendingaddress, '@([a-zA-Z0-9.-]+)$', 1) IS NOT NULL) THEN REGEXP_EXTRACT(sendingaddress, '@([a-zA-Z0-9.-]+)$', 1) ELSE 'none' END) sending_domain
+, CAST(MAX(tags['ses:source-tls-version']) AS VARCHAR) source_tls_version
+, CAST(MAX(channeldata['subject']) AS VARCHAR) subject
+, CAST(MAX(tags['ses:source-ip']) AS VARCHAR) source_ip
+, COALESCE(CAST(MAX(tags['ses:configuration-set']) AS VARCHAR), 'none') configuration_set
+, COALESCE(CAST(MAX(tags['campaign']) AS VARCHAR), 'none') campaign
+FROM
+  "engagementdb-glue-db"."engagementdb-events-table"
+WHERE (channel = 'email')
+GROUP BY messageid, sendingaddress, destinationaddress[1]
+`,
+`CREATE OR REPLACE VIEW "email_conversion_rates_view" AS 
+SELECT
+  DATE(message_timestamp) message_date
+, isp
+, sending_domain
+, campaign
+, configuration_set
+, MIN(ingest_timestamp) ingest_timestamp
+, MIN(send_timestamp) message_timestamp
+, COUNT(*) total_emails_sent
+, SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) total_deliveries
+, SUM((CASE WHEN (bounce_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) total_bounces
+, SUM((CASE WHEN (complaint_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) total_complaints
+, COUNT(DISTINCT (CASE WHEN (open_count > 0) THEN messageid ELSE null END)) total_emails_opened
+, COUNT(DISTINCT (CASE WHEN (click_count > 0) THEN messageid ELSE null END)) total_emails_clicked
+, ROUND((CASE WHEN (COUNT(*) > 0) THEN ((SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) * 1E0) / COUNT(*)) ELSE 0 END), 2) delivery_rate
+, ROUND((CASE WHEN (SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) > 0) THEN ((COUNT(DISTINCT (CASE WHEN (open_count > 0) THEN messageid ELSE null END)) * 1E0) / SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END))) ELSE 0 END), 2) open_rate
+, ROUND((CASE WHEN (COUNT(DISTINCT (CASE WHEN (open_count > 0) THEN messageid ELSE null END)) > 0) THEN ((COUNT(DISTINCT (CASE WHEN (click_count > 0) THEN messageid ELSE null END)) * 1E0) / COUNT(DISTINCT (CASE WHEN (open_count > 0) THEN messageid ELSE null END))) ELSE 0 END), 2) open_to_click_rate
+, ROUND((CASE WHEN (SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) > 0) THEN ((SUM((CASE WHEN (bounce_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) * 1E0) / SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END))) ELSE 0 END), 2) bounce_rate
+, ROUND((CASE WHEN (SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) > 0) THEN ((SUM((CASE WHEN (complaint_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) * 1E0) / SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END))) ELSE 0 END), 2) complaint_rate
+FROM
+  "engagementdb-glue-db"."email_message_status"
+GROUP BY DATE(message_timestamp), ingest_timestamp, isp, sending_domain, campaign, configuration_set
+`,
+`CREATE OR REPLACE VIEW "media_message_status" AS 
+WITH
+  latest_event AS (
+   SELECT
+     messageid
+   , MAX(timestamp) latest_timestamp
+   FROM
+     "engagementdb-events-table"
+   WHERE (channel = 'media')
+   GROUP BY messageid
+) 
+SELECT
+  e.messageid
+, MAX(channeldata['isocountrycode']) iso_country_code
+, MAX(e.type) type
+, MAX(CAST(channeldata['totalcarrierfee'] AS DOUBLE)) carrier_fee
+, MAX(CAST(channeldata['totalmessageprice'] AS DOUBLE)) message_price
+, MAX(CAST(channeldata['totalmessageparts'] AS INTEGER)) message_parts
+, ROUND((MAX(CAST(channeldata['totalmessageprice'] AS DOUBLE)) + MAX(CAST(channeldata['totalmessageprice'] AS DOUBLE))), 5) total_price
+, e.destinationaddress[1] destination_address
+, e.sendingaddress sending_address
+, MAX(json_extract_scalar(e.rawevent, '$.carrierName')) carrier_name
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_DELIVERED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_delivered
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_SUCCESSFUL') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_successful
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_QUEUED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_queued
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_PENDING') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_pending
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_BLOCKED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_blocked
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_TTL_EXPIRED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_ttl_expired
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_CARRIER_UNREACHABLE') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_carrier_unreachable
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_INVALID') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_invalid
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_INVALID_MESSAGE') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_invalid_message
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_CARRIER_BLOCKED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_carrier_blocked
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_UNREACHABLE') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_unreachable
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_SPAM') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_spam
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_UNKNOWN') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_unknown
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_FILE_TYPE_UNSUPPORTED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_type_unsupported
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_FILE_SIZE_EXCEEDED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_size_exceeded
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'MEDIA_FILE_INACCESSIBLE') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) media_inaccessible
+, e.tags context
+, MIN(ingest_timestamp) ingest_timestamp
+, FROM_UNIXTIME((MIN(e.timestamp) / 1000)) message_timestamp
+, MAX((CASE WHEN (e.timestamp = le.latest_timestamp) THEN json_extract_scalar(e.rawevent, '$.messageStatus') END)) last_status
+, MAX((CASE WHEN (e.timestamp = le.latest_timestamp) THEN json_extract_scalar(e.rawevent, '$.messageStatusDescription') END)) status_description
+, MAX((CASE WHEN (e.timestamp = le.latest_timestamp) THEN (CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') IN ('MEDIA_DELIVERED', 'MEDIA_SUCCESSFUL')) THEN 'success' WHEN (json_extract_scalar(e.rawevent, '$.eventType') IN ('MEDIA_QUEUED', 'MEDIA_PENDING')) THEN 'pending' WHEN (json_extract_scalar(e.rawevent, '$.eventType') IN ('MEDIA_BLOCKED', 'MEDIA_TTL_EXPIRED', 'MEDIA_CARRIER_UNREACHABLE', 'MEDIA_INVALID', 'MEDIA_INVALID_MESSAGE', 'MEDIA_CARRIER_BLOCKED', 'MEDIA_UNREACHABLE', 'MEDIA_SPAM', 'MEDIA_UNKNOWN', 'MEDIA_FILE_TYPE_UNSUPPORTED', 'MEDIA_FILE_SIZE_EXCEEDED', 'MEDIA_FILE_INACCESSIBLE')) THEN 'failed' ELSE 'unknown' END) END)) message_status
+FROM
+  ("engagementdb-events-table" e
+INNER JOIN latest_event le ON (e.messageid = le.messageid))
+WHERE (e.channel = 'media')
+GROUP BY e.messageid, e.destinationaddress, e.sendingaddress, e.tags
+`,
+`CREATE OR REPLACE VIEW "media_conversion_rates_view" AS 
+SELECT
+  ingest_timestamp
+, DATE(message_timestamp) message_date
+, iso_country_code
+, type
+, sending_address
+, COUNT(*) total_messages
+, COUNT((CASE WHEN (message_status = 'success') THEN 1 END)) successful_messages
+, ROUND((CAST(COUNT((CASE WHEN (message_status = 'success') THEN 1 END)) AS DOUBLE) / COUNT(*)), 3) success_rate_percentage
+, ROUND(SUM(message_price), 4) total_message_price
+, ROUND(SUM(carrier_fee), 4) total_carrier_fee
+, ROUND(SUM(total_price), 4) total_cost
+, ROUND(AVG(message_parts), 2) avg_message_parts
+FROM
+  "engagementdb-glue-db"."media_message_status"
+GROUP BY ingest_timestamp, DATE(message_timestamp), iso_country_code, type, sending_address
+ORDER BY message_date ASC, iso_country_code ASC, type ASC, sending_address ASC
+`,
+`CREATE OR REPLACE VIEW "sms_message_status" AS 
+WITH
+  latest_event AS (
+   SELECT
+     messageid
+   , MAX(timestamp) latest_timestamp
+   FROM
+     "engagementdb-events-table"
+   WHERE (channel = 'text')
+   GROUP BY messageid
+) 
+SELECT
+  e.messageid
+, MAX(channeldata['isocountrycode']) iso_country_code
+, MAX(e.type) type
+, MAX(CAST(channeldata['totalcarrierfee'] AS DOUBLE)) carrier_fee
+, MAX(CAST(channeldata['totalmessageprice'] AS DOUBLE)) message_price
+, MAX(CAST(channeldata['totalmessageparts'] AS INTEGER)) message_parts
+, ROUND((MAX(CAST(channeldata['totalmessageprice'] AS DOUBLE)) + MAX(CAST(channeldata['totalmessageprice'] AS DOUBLE))), 5) total_price
+, e.destinationaddress[1] destination_address
+, e.sendingaddress sending_address
+, MAX(json_extract_scalar(e.rawevent, '$.carrierName')) carrier_name
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_DELIVERED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_delivered
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_SUCCESSFUL') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_successful
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_QUEUED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_queued
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_PENDING') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_pending
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_BLOCKED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_blocked
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_TTL_EXPIRED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_ttl_expired
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_CARRIER_UNREACHABLE') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_carrier_unreachable
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_INVALID') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_invalid
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_INVALID_MESSAGE') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_invalid_message
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_CARRIER_BLOCKED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_carrier_blocked
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_UNREACHABLE') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_unreachable
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_SPAM') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_spam
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_UNKNOWN') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_unknown
+, e.tags context
+, MIN(ingest_timestamp) ingest_timestamp
+, FROM_UNIXTIME((MIN(e.timestamp) / 1000)) message_timestamp
+, MAX((CASE WHEN (e.timestamp = le.latest_timestamp) THEN json_extract_scalar(e.rawevent, '$.messageStatus') END)) last_status
+, MAX((CASE WHEN (e.timestamp = le.latest_timestamp) THEN json_extract_scalar(e.rawevent, '$.messageStatusDescription') END)) status_description
+, MAX((CASE WHEN (e.timestamp = le.latest_timestamp) THEN (CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') IN ('TEXT_DELIVERED', 'TEXT_SUCCESSFUL')) THEN 'success' WHEN (json_extract_scalar(e.rawevent, '$.eventType') IN ('TEXT_QUEUED', 'TEXT_PENDING')) THEN 'pending' WHEN (json_extract_scalar(e.rawevent, '$.eventType') IN ('TEXT_BLOCKED', 'TEXT_TTL_EXPIRED', 'TEXT_CARRIER_UNREACHABLE', 'TEXT_INVALID', 'TEXT_INVALID_MESSAGE', 'TEXT_CARRIER_BLOCKED', 'TEXT_UNREACHABLE', 'TEXT_SPAM', 'TEXT_UNKNOWN')) THEN 'failed' ELSE 'unknown' END) END)) message_status
+FROM
+  ("engagementdb-events-table" e
+INNER JOIN latest_event le ON (e.messageid = le.messageid))
+WHERE (e.channel = 'text')
+GROUP BY e.messageid, e.destinationaddress, e.sendingaddress, e.tags
+`,
+`CREATE OR REPLACE VIEW "sms_conversion_rates_view" AS 
+SELECT
+  ingest_timestamp
+, DATE(message_timestamp) message_date
+, iso_country_code
+, type
+, sending_address
+, COUNT(*) total_messages
+, COUNT((CASE WHEN (message_status = 'success') THEN 1 END)) successful_messages
+, ROUND((CAST(COUNT((CASE WHEN (message_status = 'success') THEN 1 END)) AS DOUBLE) / COUNT(*)), 3) success_rate_percentage
+, ROUND(SUM(message_price), 4) total_message_price
+, ROUND(SUM(carrier_fee), 4) total_carrier_fee
+, ROUND(SUM(total_price), 4) total_cost
+, ROUND(AVG(message_parts), 2) avg_message_parts
+FROM
+  "engagementdb-glue-db"."sms_message_status" 
+GROUP BY ingest_timestamp, DATE(message_timestamp), iso_country_code, type, sending_address
+ORDER BY message_date ASC, iso_country_code ASC, type ASC, sending_address ASC
+`,
+`CREATE OR REPLACE VIEW "voice_message_status" AS 
+WITH
+  latest_event AS (
+   SELECT
+     messageid
+   , MAX(timestamp) latest_timestamp
+   FROM
+     "engagementdb-events-table"
+   WHERE (channel = 'voice')
+   GROUP BY messageid
+) 
+SELECT
+  e.messageid
+, MAX(channeldata['isocountrycode']) iso_country_code
+, MAX(CAST(channeldata['totalmessageprice'] AS DOUBLE)) message_price
+, MAX(CAST(channeldata['calldurationinseconds'] AS INTEGER)) call_duration
+, e.destinationaddress[1] destination_address
+, e.sendingaddress sending_address
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'VOICE_INITIATED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) voice_initiated
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'VOICE_RINGING') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) voice_ringing
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'VOICE_ANSWERED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) voice_answered
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'VOICE_COMPLETED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) voice_completed
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'VOICE_BUSY') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) voice_busy
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'VOICE_NO_ANSWER') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) voice_no_answer
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'VOICE_TTL_EXPIRED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) voice_ttl_expired
+, MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'VOICE_FAILED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) voice_failed
+, e.tags context
+, MIN(ingest_timestamp) ingest_timestamp
+, FROM_UNIXTIME((MIN(e.timestamp) / 1000)) message_timestamp
+, MAX((CASE WHEN (e.timestamp = le.latest_timestamp) THEN json_extract_scalar(e.rawevent, '$.messageStatus') END)) last_status
+, MAX((CASE WHEN (e.timestamp = le.latest_timestamp) THEN (CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') IN ('VOICE_COMPLETED', 'VOICE_ANSWERED')) THEN 'success' WHEN (json_extract_scalar(e.rawevent, '$.eventType') IN ('VOICE_TTL_EXPIRED', 'VOICE_BUSY', 'VOICE_NO_ANSWER', 'VOICE_FAILED')) THEN 'failed' ELSE 'unknown' END) END)) message_status
+FROM
+  ("engagementdb-events-table" e
+INNER JOIN latest_event le ON (e.messageid = le.messageid))
+WHERE (e.channel = 'voice')
+GROUP BY e.messageid, e.destinationaddress, e.sendingaddress, e.tags
+`,
+`CREATE OR REPLACE VIEW "voice_conversion_rates_view" AS 
+SELECT
+  ingest_timestamp
+, DATE(message_timestamp) message_date
+, iso_country_code
+, sending_address
+, COUNT(*) total_messages
+, COUNT((CASE WHEN (message_status = 'success') THEN 1 END)) successful_messages
+, ROUND((CAST(COUNT((CASE WHEN (message_status = 'success') THEN 1 END)) AS DOUBLE) / COUNT(*)), 3) success_rate_percentage
+, ROUND(SUM(message_price), 4) total_message_price
+, ROUND(AVG(call_duration), 2) avg_call_duration
+FROM
+  "engagementdb-glue-db"."voice_message_status"
+GROUP BY ingest_timestamp, DATE(message_timestamp), iso_country_code, sending_address
+ORDER BY message_date ASC, iso_country_code ASC, sending_address ASC
+`,
+`CREATE OR REPLACE VIEW whatsapp_message_status AS
+SELECT 
+    messageid,
+    sendingaddress AS sending_address,
+    destinationaddress[1] AS destination_address,
+    MIN(ingest_timestamp) AS ingest_timestamp,
+    MAX(CASE WHEN status = 'sent' THEN from_unixtime(timestamp / 1000) ELSE NULL END) AS message_timestamp,
+    MAX(CASE WHEN status = 'accepted' THEN from_unixtime(timestamp / 1000) ELSE NULL END) AS accepted_timestamp,
+    MAX(CASE WHEN status = 'sent' THEN from_unixtime(timestamp / 1000) ELSE NULL END) AS sent_timestamp,
+    MAX(CASE WHEN status = 'delivered' THEN from_unixtime(timestamp / 1000) ELSE NULL END) AS delivered_timestamp,
+    MAX(CASE WHEN status = 'read' THEN from_unixtime(timestamp / 1000) ELSE NULL END) AS read_timestamp,
+    MAX(CASE WHEN status = 'failed' THEN from_unixtime(timestamp / 1000) ELSE NULL END) AS failed_timestamp,
+    COALESCE(
+        MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].biz_opaque_callback_data')),
+        NULL
+    ) AS biz_opaque,
+    COALESCE(
+        MAX(statuscode),
+        NULL
+    ) AS status_code,
+    COALESCE(
+        MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.id')),
+        NULL
+    ) AS conversation_id,
+    COALESCE(
+        MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.origin.type')),
+        NULL
+    ) AS origin_type
+FROM 
     "engagementdb-glue-db"."engagementdb-events-table"
-  WHERE ((channel = 'whatsapp') AND (type = 'messageStatus') AND (messageid IS NOT NULL))
-  GROUP BY messageid, sendingaddress, destinationaddress
-  `,
-  `CREATE OR REPLACE VIEW "engagementdb-glue-db"."whatsapp_conversation_view" AS 
-  SELECT
-    json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.id') conversation_id
-  , COUNT(DISTINCT messageid) total_messages
-  , MIN(from_unixtime((timestamp / 1000))) message_timestamp
-  , MIN(from_unixtime((timestamp / 1000))) first_message_timestamp
-  , MAX(from_unixtime((timestamp / 1000))) last_message_timestamp
-  , CAST((to_unixtime(MAX(from_unixtime((timestamp / 1000)))) - to_unixtime(MIN(from_unixtime((timestamp / 1000))))) AS INTEGER) conversation_duration_seconds
-  , CAST(((to_unixtime(MAX(from_unixtime((timestamp / 1000)))) - to_unixtime(MIN(from_unixtime((timestamp / 1000))))) / 60) AS DOUBLE) conversation_duration_minutes
-  , sendingaddress sending_address
-  , destinationaddress[1] destination_address
-  , COALESCE(MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].biz_opaque_callback_data')), null) biz_opaque
-  , COALESCE(MAX(statuscode), null) status_code
-  , COALESCE(MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.origin.type')), null) origin_type
-  FROM
-    "engagementdb-glue-db"."engagementdb-events-table"
-  WHERE ((channel = 'whatsapp') AND (type = 'messageStatus') AND (status <> 'accepted') AND (json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.id') IS NOT NULL) AND (messageid IS NOT NULL))
-  GROUP BY json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.id'), sendingaddress, destinationaddress[1]
-  `,
-  `CREATE OR REPLACE VIEW "engagementdb-glue-db"."whatsapp_message_conversion_rates" AS 
-  SELECT
-    sending_address
-  , DATE(COALESCE(sent_timestamp, accepted_timestamp, delivered_timestamp, read_timestamp)) message_timestamp
-  , DATE(COALESCE(sent_timestamp, accepted_timestamp, delivered_timestamp, read_timestamp)) message_date
-  , COUNT(*) total_messages
-  , COUNT(accepted_timestamp) accepted_count
-  , COUNT(sent_timestamp) sent_count
-  , COUNT(delivered_timestamp) delivered_count
-  , COUNT(read_timestamp) read_count
-  , COUNT(failed_timestamp) failed_count
-  , ROUND(CAST((CASE WHEN (COUNT(sent_timestamp) > 0) THEN (CAST(COUNT(accepted_timestamp) AS DOUBLE) / COUNT(sent_timestamp)) ELSE 0 END) AS DOUBLE), 3) accepted_to_sent_rate
-  , ROUND(CAST((CASE WHEN (COUNT(sent_timestamp) > 0) THEN (CAST(COUNT(delivered_timestamp) AS DOUBLE) / COUNT(sent_timestamp)) ELSE 0 END) AS DOUBLE), 3) sent_to_delivered_rate
-  , ROUND(CAST((CASE WHEN (COUNT(delivered_timestamp) > 0) THEN (CAST(COUNT(read_timestamp) AS DOUBLE) / COUNT(delivered_timestamp)) ELSE 0 END) AS DOUBLE), 3) delivered_to_read_rate
-  , ROUND(CAST((CASE WHEN (COUNT(sent_timestamp) > 0) THEN (CAST(COUNT(failed_timestamp) AS DOUBLE) / COUNT(sent_timestamp)) ELSE 0 END) AS DOUBLE), 3) sent_to_failed_rate
-  FROM
-    "engagementdb-glue-db"."whatsapp_message_status"  
-  GROUP BY sending_address, DATE(COALESCE(sent_timestamp, accepted_timestamp, delivered_timestamp, read_timestamp))
-  `,
-  `
-  CREATE OR REPLACE VIEW "sms_message_status" AS 
-  WITH
-    latest_event AS (
-     SELECT
-       messageid
-     , MAX(timestamp) latest_timestamp
-     FROM
-       "engagementdb-glue-db"."engagementdb-events-table"
-     WHERE (channel = 'text')
-     GROUP BY messageid
-  ) 
-  SELECT
-    e.messageid
-  , MAX(json_extract_scalar(e.rawevent, '$.isoCountryCode')) iso_country_code
-  , MAX(e.type) type
-  , MAX(CAST(json_extract_scalar(e.rawevent, '$.totalCarrierFee') AS DOUBLE)) carrier_fee
-  , MAX(CAST(json_extract_scalar(e.rawevent, '$.totalMessagePrice') AS DOUBLE)) message_price
-  , MAX(CAST(json_extract_scalar(e.rawevent, '$.totalMessageParts') AS INTEGER)) message_parts
-  , ROUND((MAX(CAST(json_extract_scalar(e.rawevent, '$.totalCarrierFee') AS DOUBLE)) + MAX(CAST(json_extract_scalar(e.rawevent, '$.totalMessagePrice') AS DOUBLE))), 5) total_price
-  , e.destinationaddress[1] destination_address
-  , e.sendingaddress sending_address
-  , MAX(json_extract_scalar(e.rawevent, '$.carrierName')) carrier_name
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_DELIVERED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_delivered
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_SUCCESSFUL') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_successful
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_QUEUED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_queued
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_PENDING') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_pending
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_BLOCKED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_blocked
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_TTL_EXPIRED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_ttl_expired
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_CARRIER_UNREACHABLE') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_carrier_unreachable
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_INVALID') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_invalid
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_INVALID_MESSAGE') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_invalid_message
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_CARRIER_BLOCKED') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_carrier_blocked
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_UNREACHABLE') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_unreachable
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_SPAM') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_spam
-  , MAX((CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') = 'TEXT_UNKNOWN') THEN FROM_UNIXTIME((e.timestamp / 1000)) END)) text_unknown
-  , e.tags context
-  , FROM_UNIXTIME((MIN(e.timestamp) / 1000)) message_timestamp
-  , MAX((CASE WHEN (e.timestamp = le.latest_timestamp) THEN json_extract_scalar(e.rawevent, '$.messageStatus') END)) last_status
-  , MAX((CASE WHEN (e.timestamp = le.latest_timestamp) THEN json_extract_scalar(e.rawevent, '$.messageStatusDescription') END)) status_description
-  , MAX((CASE WHEN (e.timestamp = le.latest_timestamp) THEN (CASE WHEN (json_extract_scalar(e.rawevent, '$.eventType') IN ('TEXT_DELIVERED', 'TEXT_SUCCESSFUL')) THEN 'success' WHEN (json_extract_scalar(e.rawevent, '$.eventType') IN ('TEXT_QUEUED', 'TEXT_PENDING')) THEN 'pending' WHEN (json_extract_scalar(e.rawevent, '$.eventType') IN ('TEXT_BLOCKED', 'TEXT_TTL_EXPIRED', 'TEXT_CARRIER_UNREACHABLE', 'TEXT_INVALID', 'TEXT_INVALID_MESSAGE', 'TEXT_CARRIER_BLOCKED', 'TEXT_UNREACHABLE', 'TEXT_SPAM', 'TEXT_UNKNOWN')) THEN 'failed' ELSE 'unknown' END) END)) message_status
-  FROM
-    ("engagementdb-glue-db"."engagementdb-events-table" e
-  INNER JOIN latest_event le ON (e.messageid = le.messageid))
-  WHERE (e.channel = 'text')
-  GROUP BY e.messageid, e.destinationaddress, e.sendingaddress, e.tags
-  `,
-  `
-  CREATE OR REPLACE VIEW "sms_conversion_rates_view" AS 
-  SELECT
-    DATE(message_timestamp) message_date
-  , iso_country_code
-  , type
-  , sending_address
-  , COUNT(*) total_messages
-  , COUNT((CASE WHEN (message_status = 'success') THEN 1 END)) successful_messages
-  , ROUND((CAST(COUNT((CASE WHEN (message_status = 'success') THEN 1 END)) AS DOUBLE) / COUNT(*)), 3) success_rate_percentage
-  , ROUND(SUM(message_price), 4) total_message_price
-  , ROUND(SUM(carrier_fee), 4) total_carrier_fee
-  , ROUND(SUM(total_price), 4) total_cost
-  , ROUND(AVG(message_parts), 2) avg_message_parts
-  FROM
-    sms_message_status
-  GROUP BY DATE(message_timestamp), iso_country_code, type, sending_address
-  ORDER BY message_date ASC, iso_country_code ASC, type ASC, sending_address ASC
-  `,
-  `
-  CREATE OR REPLACE VIEW "email_message_status" AS 
-  SELECT
-    messageid
-  , sendingaddress
-  , destinationaddress[1] destinationaddress
-  , FROM_UNIXTIME((MIN(timestamp) / 1000)) message_timestamp
-  , MAX((CASE WHEN (type = 'Send') THEN from_unixtime((timestamp / 1000)) ELSE null END)) send_timestamp
-  , MAX((CASE WHEN (type = 'Bounce') THEN from_unixtime((timestamp / 1000)) ELSE null END)) bounce_timestamp
-  , MAX((CASE WHEN (type = 'Complaint') THEN from_unixtime((timestamp / 1000)) ELSE null END)) complaint_timestamp
-  , MAX((CASE WHEN (type = 'Delivery') THEN from_unixtime((timestamp / 1000)) ELSE null END)) delivery_timestamp
-  , MAX((CASE WHEN (type = 'Reject') THEN from_unixtime((timestamp / 1000)) ELSE null END)) reject_timestamp
-  , MAX((CASE WHEN (type = 'Open') THEN from_unixtime((timestamp / 1000)) ELSE null END)) last_open_timestamp
-  , SUM((CASE WHEN (type = 'Open') THEN 1 ELSE 0 END)) open_count
-  , MAX((CASE WHEN (type = 'Click') THEN from_unixtime((timestamp / 1000)) ELSE null END)) last_click_timestamp
-  , SUM((CASE WHEN (type = 'Click') THEN 1 ELSE 0 END)) click_count
-  , COALESCE(MAX((CASE WHEN (type = 'Click') THEN json_extract_scalar(rawevent, '$.click.link') END)), null) last_clicked_link
-  , MAX((CASE WHEN (type = 'Rendering Failure') THEN from_unixtime((timestamp / 1000)) ELSE null END)) rendering_failure_timestamp
-  , MAX((CASE WHEN (type = 'DeliveryDelay') THEN from_unixtime((timestamp / 1000)) ELSE null END)) delivery_delay_timestamp
-  , MAX((CASE WHEN (type = 'Subscription') THEN from_unixtime((timestamp / 1000)) ELSE null END)) subscription_timestamp
-  , MAX(json_extract_scalar(rawevent, '$.bounce.bounceType')) bouncetype
-  , MAX(json_extract_scalar(rawevent, '$.bounce.bounceSubType')) bounceSubType
-  , MAX(json_extract_scalar(rawevent, '$.complaint.complaintFeedbackType')) complaintFeedbackType
-  , (CASE WHEN (MAX((CASE WHEN (type = 'Bounce') THEN timestamp ELSE null END)) IS NOT NULL) THEN 'Bounce' WHEN (MAX((CASE WHEN (type = 'Complaint') THEN timestamp ELSE null END)) IS NOT NULL) THEN 'Complaint' WHEN (MAX((CASE WHEN (type = 'Delivery') THEN timestamp ELSE null END)) IS NOT NULL) THEN 'Delivery' WHEN (MAX((CASE WHEN (type = 'Reject') THEN timestamp ELSE null END)) IS NOT NULL) THEN 'Reject' WHEN (MAX((CASE WHEN (type = 'Send') THEN timestamp ELSE null END)) IS NOT NULL) THEN 'Send' ELSE null END) last_status
-  , (CASE WHEN (REGEXP_EXTRACT(destinationaddress[1], '@([a-zA-Z0-9.-]+)$') = 'gmail.com') THEN 'gmail' WHEN (REGEXP_EXTRACT(destinationaddress[1], '@([a-zA-Z0-9.-]+)$') = 'yahoo.com') THEN 'yahoo' ELSE REGEXP_EXTRACT(destinationaddress[1], '@([a-zA-Z0-9.-]+)$', 1) END) isp
-  , (CASE WHEN (REGEXP_EXTRACT(sendingaddress, '@([a-zA-Z0-9.-]+)$', 1) IS NOT NULL) THEN REGEXP_EXTRACT(sendingaddress, '@([a-zA-Z0-9.-]+)$', 1) ELSE 'none' END) sending_domain
-  , CAST(MAX(tags['ses:source-tls-version']) AS VARCHAR) source_tls_version
-  , CAST(MAX(channeldata['subject']) AS VARCHAR) subject
-  , CAST(MAX(tags['ses:source-ip']) AS VARCHAR) source_ip
-  , COALESCE(CAST(MAX(tags['ses:configuration-set']) AS VARCHAR), 'none') configuration_set
-  , COALESCE(CAST(MAX(tags['campaign']) AS VARCHAR), 'none') campaign
-  FROM
-    "engagementdb-glue-db"."engagementdb-events-table"
-  WHERE (channel = 'email')
-  GROUP BY messageid, sendingaddress, destinationaddress[1]
-  `,
-  `
-  CREATE OR REPLACE VIEW "email_conversion_rates_view" AS 
-  SELECT
-    DATE(message_timestamp) message_date
-  , isp
-  , sending_domain
-  , campaign
-  , configuration_set
-  , MIN(send_timestamp) message_timestamp
-  , COUNT(*) total_emails_sent
-  , SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) total_deliveries
-  , SUM((CASE WHEN (bounce_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) total_bounces
-  , SUM((CASE WHEN (complaint_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) total_complaints
-  , COUNT(DISTINCT (CASE WHEN (open_count > 0) THEN messageid ELSE null END)) total_emails_opened
-  , COUNT(DISTINCT (CASE WHEN (click_count > 0) THEN messageid ELSE null END)) total_emails_clicked
-  , ROUND((CASE WHEN (COUNT(*) > 0) THEN ((SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) * 1E0) / COUNT(*)) ELSE 0 END), 2) delivery_rate
-  , ROUND((CASE WHEN (SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) > 0) THEN ((COUNT(DISTINCT (CASE WHEN (open_count > 0) THEN messageid ELSE null END)) * 1E0) / SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END))) ELSE 0 END), 2) open_rate
-  , ROUND((CASE WHEN (COUNT(DISTINCT (CASE WHEN (open_count > 0) THEN messageid ELSE null END)) > 0) THEN ((COUNT(DISTINCT (CASE WHEN (click_count > 0) THEN messageid ELSE null END)) * 1E0) / COUNT(DISTINCT (CASE WHEN (open_count > 0) THEN messageid ELSE null END))) ELSE 0 END), 2) open_to_click_rate
-  , ROUND((CASE WHEN (SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) > 0) THEN ((SUM((CASE WHEN (bounce_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) * 1E0) / SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END))) ELSE 0 END), 2) bounce_rate
-  , ROUND((CASE WHEN (SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) > 0) THEN ((SUM((CASE WHEN (complaint_timestamp IS NOT NULL) THEN 1 ELSE 0 END)) * 1E0) / SUM((CASE WHEN (delivery_timestamp IS NOT NULL) THEN 1 ELSE 0 END))) ELSE 0 END), 2) complaint_rate
-  FROM
-    "engagementdb-glue-db"."email_message_status"
-  GROUP BY DATE(message_timestamp), isp, sending_domain, campaign, configuration_set
-  `
+WHERE 
+    channel = 'whatsapp' AND
+    type = 'messageStatus' AND
+    messageid IS NOT NULL
+GROUP BY 
+    messageid, sendingaddress, destinationaddress;
+`,
+`CREATE OR REPLACE VIEW "whatsapp_message_status" AS 
+SELECT
+  messageid
+, sendingaddress sending_address
+, destinationaddress[1] destination_address
+, MIN(ingest_timestamp) ingest_timestamp
+, MAX((CASE WHEN (status = 'sent') THEN from_unixtime((timestamp / 1000)) ELSE null END)) message_timestamp
+, MAX((CASE WHEN (status = 'accepted') THEN from_unixtime((timestamp / 1000)) ELSE null END)) accepted_timestamp
+, MAX((CASE WHEN (status = 'sent') THEN from_unixtime((timestamp / 1000)) ELSE null END)) sent_timestamp
+, MAX((CASE WHEN (status = 'delivered') THEN from_unixtime((timestamp / 1000)) ELSE null END)) delivered_timestamp
+, MAX((CASE WHEN (status = 'read') THEN from_unixtime((timestamp / 1000)) ELSE null END)) read_timestamp
+, MAX((CASE WHEN (status = 'failed') THEN from_unixtime((timestamp / 1000)) ELSE null END)) failed_timestamp
+, COALESCE(MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].biz_opaque_callback_data')), null) biz_opaque
+, COALESCE(MAX(statuscode), null) status_code
+, COALESCE(MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.id')), null) conversation_id
+, COALESCE(MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.origin.type')), null) origin_type
+FROM
+  "engagementdb-glue-db"."engagementdb-events-table"
+WHERE ((channel = 'whatsapp') AND (type = 'messageStatus') AND (messageid IS NOT NULL))
+GROUP BY messageid, sendingaddress, destinationaddress`,
+`CREATE OR REPLACE VIEW "whatsapp_conversation_view" AS 
+SELECT
+  json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.id') conversation_id
+, COUNT(DISTINCT messageid) total_messages
+, MIN(ingest_timestamp) ingest_timestamp
+, MIN(from_unixtime((timestamp / 1000))) message_timestamp
+, MIN(from_unixtime((timestamp / 1000))) first_message_timestamp
+, MAX(from_unixtime((timestamp / 1000))) last_message_timestamp
+, CAST((to_unixtime(MAX(from_unixtime((timestamp / 1000)))) - to_unixtime(MIN(from_unixtime((timestamp / 1000))))) AS INTEGER) conversation_duration_seconds
+, CAST(((to_unixtime(MAX(from_unixtime((timestamp / 1000)))) - to_unixtime(MIN(from_unixtime((timestamp / 1000))))) / 60) AS DOUBLE) conversation_duration_minutes
+, sendingaddress sending_address
+, destinationaddress[1] destination_address
+, COALESCE(MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].biz_opaque_callback_data')), null) biz_opaque
+, COALESCE(MAX(statuscode), null) status_code
+, COALESCE(MAX(json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.origin.type')), null) origin_type
+FROM
+  "engagementdb-glue-db"."engagementdb-events-table"
+WHERE ((channel = 'whatsapp') AND (type = 'messageStatus') AND (status <> 'accepted') AND (json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.id') IS NOT NULL) AND (messageid IS NOT NULL))
+GROUP BY json_extract_scalar(rawevent, '$.changes[0].value.statuses[0].conversation.id'), sendingaddress, destinationaddress[1]
+`,
+`CREATE OR REPLACE VIEW "whatsapp_message_conversion_rates" AS 
+SELECT
+  sending_address
+, COALESCE(ingest_timestamp) ingest_timestamp
+, DATE(COALESCE(sent_timestamp, accepted_timestamp, delivered_timestamp, read_timestamp)) message_timestamp
+, DATE(COALESCE(sent_timestamp, accepted_timestamp, delivered_timestamp, read_timestamp)) message_date
+, COUNT(*) total_messages
+, COUNT(accepted_timestamp) accepted_count
+, COUNT(sent_timestamp) sent_count
+, COUNT(delivered_timestamp) delivered_count
+, COUNT(read_timestamp) read_count
+, COUNT(failed_timestamp) failed_count
+, ROUND(CAST((CASE WHEN (COUNT(sent_timestamp) > 0) THEN (CAST(COUNT(accepted_timestamp) AS DOUBLE) / COUNT(sent_timestamp)) ELSE 0 END) AS DOUBLE), 3) accepted_to_sent_rate
+, ROUND(CAST((CASE WHEN (COUNT(sent_timestamp) > 0) THEN (CAST(COUNT(delivered_timestamp) AS DOUBLE) / COUNT(sent_timestamp)) ELSE 0 END) AS DOUBLE), 3) sent_to_delivered_rate
+, ROUND(CAST((CASE WHEN (COUNT(delivered_timestamp) > 0) THEN (CAST(COUNT(read_timestamp) AS DOUBLE) / COUNT(delivered_timestamp)) ELSE 0 END) AS DOUBLE), 3) delivered_to_read_rate
+, ROUND(CAST((CASE WHEN (COUNT(sent_timestamp) > 0) THEN (CAST(COUNT(failed_timestamp) AS DOUBLE) / COUNT(sent_timestamp)) ELSE 0 END) AS DOUBLE), 3) sent_to_failed_rate
+FROM
+  "engagementdb-glue-db"."whatsapp_message_status"
+GROUP BY sending_address, DATE(COALESCE(sent_timestamp, accepted_timestamp, delivered_timestamp, read_timestamp)), COALESCE(ingest_timestamp)`
 ]
 const overrideParameters = {
   "Dashboards":[

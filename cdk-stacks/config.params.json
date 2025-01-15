@@ -39,13 +39,6 @@
             "description": "The Quicksight Principal Username copied in step 4.  Should look like Admin/[Quicksight Username]",
             "required": false,
             "parent": "quicksightStackEnabled"
-        },
-        {
-            "name": "langOption",
-            "cliFormat": "lang-option",
-            "description": "The language of the dashboard template that will be used if exists. Current supported language [en, es]. Default uses 'en'",
-            "required": false,
-            "parent": "quicksightStackEnabled"
         }
     ],
     "tags": {

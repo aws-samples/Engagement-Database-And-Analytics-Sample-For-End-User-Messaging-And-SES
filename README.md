@@ -1,4 +1,4 @@
-# engagement-database
+# Engagement-Database-And-Analytics-Sample-For-End-User-Messaging-And-SES
 
 >**BE AWARE:** This code base is an [Open Source](LICENSE) starter project designed to provide a demonstration and a base to start from for specific use cases. 
 It should not be considered fully Production-ready.
@@ -38,6 +38,20 @@ Combining conversational data with engagement events allows for a number of inte
         * Agent: [Looks at Customer Profile and sees we just sent information on new Investment Management product] “I’d be happy to discuss our new service to help insure you have the funds needed for your retirement.” 
 * The ability to pull engagement/conversation data into other data sources such as Amazon Connect Customer Profiles, Salesforce.com or any Customer Data Platforms (CDP)
 * Sender Reputation management with the ability to see engagement metrics across multiple channels in Amazon QuickSight
+
+## Table of Contents
+
+1. [Solution components](#solution-components)
+2. [Solution prerequisites](#solution-prerequisites)
+3. [Solution setup: Base Stack](#solution-setup-base-stack)
+4. [Solution Setup: QuickSight Dashboard (OPTIONAL)](#solution-setup-quicksight-dashboard-optional)
+5. [Testing](#testing)
+6. [Data Model](#data-model)
+7. [Data Mapping Modifications](#data-mapping-modifications)
+8. [Associating AWS data with Customer supplied identifiers](#associating-aws-data-with-customer-supplied-identifiers)
+9. [Sample Athena Queries](#sample-athena-queries)
+10. [Troubleshooting](#troubleshooting)
+11. [Using this in Production](#using-this-in-production)
 
 ## Solution components
 
@@ -141,7 +155,6 @@ The below instructions show how to deploy the solution using AWS CDK CLI.
         - `quicksight-stack-enabled`: Set to true to enable QuickSight support
         - `athena-query-storage-s3-bucket-name`: The S3 Bucket of where Athena should store query results. You can use the same bucket as the one used for the Access Logs above which is `[CDK Output: AccessLogsBucketName]`. Query output will be encrypted using AWS Managed Keys
         - `quicksight-admin-username`: The Quicksight Principal Username copied in the previous step. Should look like `Admin/[Quicksight Username]`
-        - `lang-option`: The language of the dashboard template that will be used if exists. Current supported language [en, es]. Default uses 'en'
 
 3. Deploy CDK stacks
     - In your terminal navigate to `engagement-database/cdk-stacks`
@@ -151,6 +164,9 @@ The below instructions show how to deploy the solution using AWS CDK CLI.
 
 4. Test the solution
     - Navigate to QuickSight, select Dashboards, and open the `Messaging Dashboard`
+
+### QuickSight Refresh Schedules
+In order to save costs the QuickSight Datasets are set to do Incremental Data refreshes on a daily basis.  This is to ensure that the data is up to date in the dashboard.  If you would like to change this so that is more or less frequent, please see the [QuickSight Documentation](https://docs.aws.amazon.com/quicksight/latest/user/refreshing-imported-data.html).
 
 ## Testing
 The following sections provide instructions on how to test the solution using the AWS CLI. Its recommended to use the [CloudShell](https://docs.aws.amazon.com/cloudshell/latest/userguide/welcome.html) in the AWS Management Console for the commands.
@@ -484,11 +500,14 @@ GROUP BY 1
 ORDER BY 1
 ```
 
-
 ## Troubleshooting
 - If you don't receive data in the Athena Query results, please check the following:
     - Inspect the CloudWatch Logs for the `FirehoseTransformer` Lambda function to ensure it is processing messages correctly
         - For more detailed logs you can [Set the Log Level to TRACE](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-cloudwatchlogs-advanced.html#monitoring-cloudwatchlogs-log-level-setting)
+- QuickSight Deployment Error:
+    - `Error starting asset bundle import job: UnsupportedUserEditionException: StartAssetBundleImportJob API is only supported for accounts with Enterprise subscription.`
+    - The QuickSight deployment will fail if you are using a Standard QuickSight account which may happen if your QuickSight account was created before the Enterprise edition was released.
+    - To fix this please [upgrade your QuickSight account to the Enterprise edition](https://docs.aws.amazon.com/quicksight/latest/user/upgrading-subscription.html).
 - Credential Errors:
 ```
 @aws-sdk/credential-provider-node - defaultProvider::fromEnv WARNING:
