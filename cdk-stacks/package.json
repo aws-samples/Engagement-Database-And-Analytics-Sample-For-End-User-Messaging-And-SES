@@ -36,7 +36,7 @@
   "dependencies": {
     "@aws-cdk/aws-glue-alpha": "^2.165.0-alpha.0",
     "@aws-sdk/client-ssm": "^3.395.0",
-    "aws-cdk-lib": "^2.170.0",
+    "aws-cdk-lib": "^2.177.0",
     "source-map-support": "^0.5.21"
   }
 }
